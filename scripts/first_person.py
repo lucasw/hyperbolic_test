@@ -30,75 +30,77 @@ from ursina import (
 from ursina.prefabs.first_person_controller import FirstPersonController
 from ursina.shaders import lit_with_shadows_shader
 
-app = Ursina()
 
-random.seed(0)
-Entity.default_shader = lit_with_shadows_shader
+class Game(Entity):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.pause_handler = Entity(ignore_paused=True, input=self.pause_input)
 
-ground = Entity(model='plane', collider='box', scale=64, texture='grass', texture_scale=(4, 4))
+        gun = Entity(model='cube', parent=camera, position=(.5, -.25, .25), scale=(.3, .2, 1),
+                     origin_z=-.5, color=color.red, on_cooldown=False)
+        gun.muzzle_flash = Entity(parent=gun, z=1, world_scale=.5, model='quad',
+                                  color=color.yellow, enabled=False)
+        self.gun = gun
 
-editor_camera = EditorCamera(enabled=False, ignore_paused=True)
-player = FirstPersonController(model='cube', z=-10, color=color.orange, origin_y=-.5, speed=8, collider='box')
-player.collider = BoxCollider(player, Vec3(0, 1, 0), Vec3(1, 2, 1))
+        self.editor_camera = EditorCamera(enabled=False, ignore_paused=True)
 
-gun = Entity(model='cube', parent=camera, position=(.5, -.25, .25), scale=(.3, .2, 1),
-             origin_z=-.5, color=color.red, on_cooldown=False)
-gun.muzzle_flash = Entity(parent=gun, z=1, world_scale=.5, model='quad', color=color.yellow, enabled=False)
+        self.player = FirstPersonController(model='cube', z=-10, color=color.orange,
+                                            origin_y=-.5, speed=8, collider='box')
+        self.player.collider = BoxCollider(self.player, Vec3(0, 1, 0), Vec3(1, 2, 1))
 
-shootables_parent = Entity()
-mouse.traverse_target = shootables_parent
+    def update(self):
+        if held_keys['left mouse']:
+            self.shoot()
 
+    def shoot(self):
+        if not self.gun.on_cooldown:
+            # print('shoot')
+            self.gun.on_cooldown = True
+            self.gun.muzzle_flash.enabled = True
+            from ursina.prefabs.ursfx import ursfx
+            ursfx([(0.0, 0.0), (0.1, 0.9), (0.15, 0.75), (0.3, 0.14), (0.6, 0.0)],
+                  volume=0.5, wave='noise', pitch=random.uniform(-13, -12), pitch_change=-12, speed=3.0)
+            invoke(self.gun.muzzle_flash.disable, delay=.05)
+            invoke(setattr, self.gun, 'on_cooldown', False, delay=.15)
+            if mouse.hovered_entity and hasattr(mouse.hovered_entity, 'hp'):
+                mouse.hovered_entity.hp -= 10
+                mouse.hovered_entity.blink(color.red)
 
-for i in range(16):
-    Entity(model='cube', origin_y=-.5, scale=2, texture='brick', texture_scale=(1, 2),
-           x=random.uniform(-8, 8),
-           z=random.uniform(-8, 8) + 8,
-           collider='box',
-           scale_y=random.uniform(2, 3),
-           color=color.hsv(0, 0, random.uniform(.9, 1))
-           )
+    def pause_input(self, key):
+        if key == 'tab':    # press tab to toggle edit/play mode
+            editor_camera = self.editor_camera
+            editor_camera.enabled = not editor_camera.enabled
 
+            self.player.visible_self = editor_camera.enabled
+            self.player.cursor.enabled = not editor_camera.enabled
+            self.gun.enabled = not editor_camera.enabled
+            mouse.locked = not editor_camera.enabled
+            editor_camera.position = self.player.position
 
-def update():
-    if held_keys['left mouse']:
-        shoot()
-
-
-def shoot():
-    if not gun.on_cooldown:
-        # print('shoot')
-        gun.on_cooldown = True
-        gun.muzzle_flash.enabled = True
-        from ursina.prefabs.ursfx import ursfx
-        ursfx([(0.0, 0.0), (0.1, 0.9), (0.15, 0.75), (0.3, 0.14), (0.6, 0.0)],
-              volume=0.5, wave='noise', pitch=random.uniform(-13, -12), pitch_change=-12, speed=3.0)
-        invoke(gun.muzzle_flash.disable, delay=.05)
-        invoke(setattr, gun, 'on_cooldown', False, delay=.15)
-        if mouse.hovered_entity and hasattr(mouse.hovered_entity, 'hp'):
-            mouse.hovered_entity.hp -= 10
-            mouse.hovered_entity.blink(color.red)
+            application.paused = editor_camera.enabled
 
 
 # from ursina.prefabs.health_bar import HealthBar
 class Enemy(Entity):
-    def __init__(self, **kwargs):
+    def __init__(self, shootables_parent, player, **kwargs):
         super().__init__(parent=shootables_parent, model='cube', scale_y=2,
                          origin_y=-.5, color=color.light_gray, collider='box', **kwargs)
         self.health_bar = Entity(parent=self, y=1.2, model='cube', color=color.red, world_scale=(1.5, .1, .1))
         self.max_hp = 100
         self.hp = self.max_hp
+        self.player = player
 
     def update(self):
-        dist = distance_xz(player.position, self.position)
+        dist = distance_xz(self.player.position, self.position)
         if dist > 40:
             return
 
         self.health_bar.alpha = max(0, self.health_bar.alpha - time.dt)
 
-        self.look_at_2d(player.position, 'y')
+        self.look_at_2d(self.player.position, 'y')
         hit_info = raycast(self.world_position + Vec3(0, 1, 0), self.forward, 30, ignore=(self,))
         # print(hit_info.entity)
-        if hit_info.entity == player:
+        if hit_info.entity == self.player:
             if dist > 2:
                 self.position += self.forward * time.dt * 5
 
@@ -117,29 +119,39 @@ class Enemy(Entity):
         self.health_bar.alpha = 1
 
 
-# Enemy()
-enemies = [Enemy(x=x * 4) for x in range(4)]
+def main():
+    app = Ursina()
+
+    random.seed(0)
+    Entity.default_shader = lit_with_shadows_shader
+
+    ground = Entity(model='plane', collider='box', scale=64, texture='grass', texture_scale=(4, 4))
+    print(ground)
+
+    game = Game()
+
+    shootables_parent = Entity()
+    mouse.traverse_target = shootables_parent
+
+    for i in range(16):
+        Entity(model='cube', origin_y=-.5, scale=2, texture='brick', texture_scale=(1, 2),
+               x=random.uniform(-8, 8),
+               z=random.uniform(-8, 8) + 8,
+               collider='box',
+               scale_y=random.uniform(2, 3),
+               color=color.hsv(0, 0, random.uniform(.9, 1))
+               )
+
+    # Enemy()
+    enemies = [Enemy(shootables_parent, game.player, x=x * 4) for x in range(4)]
+    print(len(enemies))
+
+    sun = DirectionalLight()
+    sun.look_at(Vec3(1, -1, -1))
+    Sky()
+
+    app.run()
 
 
-def pause_input(key):
-    if key == 'tab':    # press tab to toggle edit/play mode
-        editor_camera.enabled = not editor_camera.enabled
-
-        player.visible_self = editor_camera.enabled
-        player.cursor.enabled = not editor_camera.enabled
-        gun.enabled = not editor_camera.enabled
-        mouse.locked = not editor_camera.enabled
-        editor_camera.position = player.position
-
-        # TODO(lucasw) application is a global?
-        application.paused = editor_camera.enabled
-
-
-pause_handler = Entity(ignore_paused=True, input=pause_input)
-
-
-sun = DirectionalLight()
-sun.look_at(Vec3(1, -1, -1))
-Sky()
-
-app.run()
+if __name__ == "__main__":
+    main()
