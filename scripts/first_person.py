@@ -4,13 +4,17 @@ pip install ursina
 
 Adapted from ursina sample fps.py
 """
+import math
+
 # from ursina import *
 from ursina import (
     BoxCollider,
     DirectionalLight,
     EditorCamera,
     Entity,
+    Mesh,
     Sky,
+    # Text,
     Ursina,
     Vec3,
 )
@@ -31,6 +35,46 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 from ursina.shaders import lit_with_shadows_shader
 
 
+def make_verts(xsc=1.0):
+    vts = ((0.5 * xsc, 0.5, 0.0),
+           (-0.5 * xsc, 0.5, 0.0),
+           (-0.5 * xsc, -0.5, 0.0),
+           (0.5 * xsc, -0.5, 0.0),
+           (0.5 * xsc, 0.5, 0.0),
+           (-0.5 * xsc, -0.5, 0.0),
+           )
+    return vts
+
+
+def make_mesh(x, y, z, xsc=1.0):
+    """
+    x is left right
+    y is up down
+    z is forward back
+    """
+    mesh = Entity(position=(x, y, z),
+                  model=Mesh(
+                      vertices=make_verts(xsc),
+                      uvs=((1, 1), (0, 1),
+                           (0, 0), (1, 0),
+                           (1, 1), (0, 0),
+                           ),
+                      normals=[(-0.0, 0.0, -1.0),
+                               (-0.0, 0.0, -1.0),
+                               (-0.0, 0.0, -1.0),
+                               (-0.0, 0.0, -1.0),
+                               (-0.0, 0.0, -1.0),
+                               (-0.0, 0.0, -1.0),
+                               ],
+                      colors=[color.red, color.yellow,
+                              color.green, color.cyan,
+                              color.blue, color.magenta,
+                              ],
+                      mode='triangle'),
+                  )
+    return mesh
+
+
 class Game(Entity):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -48,9 +92,25 @@ class Game(Entity):
                                             origin_y=-.5, speed=8, collider='box')
         self.player.collider = BoxCollider(self.player, Vec3(0, 1, 0), Vec3(1, 2, 1))
 
+        self.count = 0
+        self.mesh = make_mesh(0.0, 1.0, 0.0, 1.0)
+        # Text(parent=self.surface, text='quad_with_usv_and_normals_and_vertex_colors',
+        #      y=1, scale=10, origin=(0,-.5))
+
     def update(self):
+        sc = 1.0 + abs(math.sin(self.count / 10.0))
+        # TODO(lucasw) can't modify vertices live, just replace the old mesh
+        # self.surface.model.vertices = make_verts(sc)
+        # print("destroy mesh")
+        destroy(self.mesh)
+        self.mesh = None
+        self.mesh = make_mesh(0, 1, 0, sc)
+
+        # print(type(self.surface.model.vertices))
         if held_keys['left mouse']:
             self.shoot()
+
+        self.count += 1
 
     def shoot(self):
         if not self.gun.on_cooldown:
@@ -134,7 +194,11 @@ def main():
     mouse.traverse_target = shootables_parent
 
     for i in range(16):
-        Entity(model='cube', origin_y=-.5, scale=2, texture='brick', texture_scale=(1, 2),
+        Entity(model='quad',  # 'cube',
+               origin_y=-.5,
+               scale=2,
+               texture='brick',
+               texture_scale=(1, 2),
                x=random.uniform(-8, 8),
                z=random.uniform(-8, 8) + 8,
                collider='box',
@@ -143,7 +207,8 @@ def main():
                )
 
     # Enemy()
-    enemies = [Enemy(shootables_parent, game.player, x=x * 4) for x in range(4)]
+    num_enemies = 0
+    enemies = [Enemy(shootables_parent, game.player, x=x * 4) for x in range(num_enemies)]
     print(len(enemies))
 
     sun = DirectionalLight()
