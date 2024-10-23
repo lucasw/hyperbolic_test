@@ -4,8 +4,8 @@ pip install ursina
 
 Adapted from ursina sample fps.py
 """
-import math
-
+from hyperbolic.poincare import Point, Transform
+import numpy as np
 # from ursina import *
 from ursina import (
     BoxCollider,
@@ -33,39 +33,53 @@ from ursina import (
 )
 from ursina.prefabs.first_person_controller import FirstPersonController
 from ursina.shaders import lit_with_shadows_shader
+from poincare_plane import get_poly_xy, Node
 
 
-def make_verts(xsc=1.0):
-    vts = ((0.5 * xsc, 0.5, 0.0),
-           (-0.5 * xsc, 0.5, 0.0),
-           (-0.5 * xsc, -0.5, 0.0),
-           (0.5 * xsc, -0.5, 0.0),
-           (0.5 * xsc, 0.5, 0.0),
-           (-0.5 * xsc, -0.5, 0.0),
+def make_verts(p0, p1):
+    x0, y0, z0 = p0[0], p0[1], p0[2]
+    x1, y1, z1 = p1[0], p1[1], p1[2]
+    # make two triangles worth
+    vts = ((x1, y1, z1),
+           (x0, y1, z0),
+           (x1, y0, z1),
+           (x1, y0, z1),
+           (x0, y1, z0),
+           (x0, y0, z0),
            )
-    return vts
+
+    pt1 = np.array([x0, y1, z0])
+    pt2 = np.array([x1, y0, z1])
+    v0 = pt1 - p0
+    v0 = v0 / np.sqrt(np.sum(v0**2))
+    v1 = pt2 - p0
+    v1 = v1 / np.sqrt(np.sum(v1**2))
+    normal = np.cross(v0, v1)
+    # to tuple
+    normal = (normal[0], normal[1], normal[2])
+    normals = (normal, normal, normal,
+               normal, normal, normal)
+
+    return vts, normals
 
 
-def make_mesh(x, y, z, xsc=1.0):
+def make_mesh(pos, p0, p1):
     """
+    x01, y01, z01 are relative to xyz
     x is left right
     y is up down
     z is forward back
     """
-    mesh = Entity(position=(x, y, z),
+    position = (pos[0], pos[1], pos[2])
+
+    vertices, normals = make_verts(p0, p1)
+    mesh = Entity(position=position,
                   model=Mesh(
-                      vertices=make_verts(xsc),
-                      uvs=((1, 1), (0, 1),
-                           (0, 0), (1, 0),
-                           (1, 1), (0, 0),
+                      vertices=vertices,
+                      uvs=((1, 1), (0, 1), (0, 0),
+                           (1, 0), (0, 1), (0, 0),
                            ),
-                      normals=[(-0.0, 0.0, -1.0),
-                               (-0.0, 0.0, -1.0),
-                               (-0.0, 0.0, -1.0),
-                               (-0.0, 0.0, -1.0),
-                               (-0.0, 0.0, -1.0),
-                               (-0.0, 0.0, -1.0),
-                               ],
+                      normals=normals,
                       colors=[color.red, color.yellow,
                               color.green, color.cyan,
                               color.blue, color.magenta,
@@ -90,21 +104,60 @@ class Game(Entity):
 
         self.player = FirstPersonController(model='cube', z=-10, color=color.orange,
                                             origin_y=-.5, speed=8, collider='box')
-        self.player.collider = BoxCollider(self.player, Vec3(0, 1, 0), Vec3(1, 2, 1))
+        self.player.collider = BoxCollider(self.player, Vec3(0, 1, 0), Vec3(0, 2, 0))
 
         self.count = 0
-        self.mesh = make_mesh(0.0, 1.0, 0.0, 1.0)
         # Text(parent=self.surface, text='quad_with_usv_and_normals_and_vertex_colors',
         #      y=1, scale=10, origin=(0,-.5))
 
+        root_rot = Transform.rotation(deg=90)
+        root_offset = Transform.translation(Point(0.0, 0.0))
+        root_transform = Transform.merge(root_offset, root_rot)
+        self.root_node = Node(name="root", offset_transform=root_transform)
+
+        children = []
+        children.extend(self.root_node.add_children("a"))
+
+        grand_children = []
+        for i, child in enumerate(children):
+            prefix = f"b{i}"
+            grand_children.extend(child.add_children(prefix))
+
+        all_nodes = []
+        all_nodes.append(self.root_node)
+        all_nodes.extend(children)
+        all_nodes.extend(grand_children)
+
+        self.meshes = []
+
+        for node in all_nodes:
+            xs, zs = get_poly_xy(node.polygon, num=3)
+            num = len(xs)
+            sc = 20.0
+            for i0 in range(num):
+                i1 = (i0 + 1) % num
+                x0 = xs[i0] * sc
+                z0 = zs[i0] * sc
+                x1 = xs[i1] * sc
+                z1 = zs[i1] * sc
+                y0 = 0.0
+                y1 = 1.0
+
+                p0a = np.array([x0, y0, z0])
+                p1a = np.array([x1, y1, z1])
+
+                p0b = np.array([0, 0, 0])
+                p1b = p1a - p0a
+                mesh = make_mesh(p0a, p0b, p1b)
+                self.meshes.append(mesh)
+
     def update(self):
-        sc = 1.0 + abs(math.sin(self.count / 10.0))
         # TODO(lucasw) can't modify vertices live, just replace the old mesh
         # self.surface.model.vertices = make_verts(sc)
         # print("destroy mesh")
-        destroy(self.mesh)
-        self.mesh = None
-        self.mesh = make_mesh(0, 1, 0, sc)
+        # if self.mesh is not None:
+        #     destroy(self.mesh)
+        #     self.mesh = None
 
         # print(type(self.surface.model.vertices))
         if held_keys['left mouse']:
@@ -193,7 +246,7 @@ def main():
     shootables_parent = Entity()
     mouse.traverse_target = shootables_parent
 
-    for i in range(16):
+    if False:  # for i in range(16):
         Entity(model='quad',  # 'cube',
                origin_y=-.5,
                scale=2,

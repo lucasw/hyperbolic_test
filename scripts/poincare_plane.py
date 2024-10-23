@@ -48,13 +48,12 @@ def construct_poly_from_points(pt_list):
     return Polygon(e_list, join=True)
 
 
-def get_poly_xy(poly):
+def get_poly_xy(poly, num=8):
     xs = []
     ys = []
     for edge in poly.edges:
         arc = edge.proj_shape
         if isinstance(arc, Arc):
-            num = 8
             for i in range(num):  # for deg in np.arange(arc.start_deg, arc.end_deg, 1.0):
                 # Arc ought to have a convenience function for this
                 # clockwise
