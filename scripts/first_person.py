@@ -140,12 +140,63 @@ class Game(Entity):
 
         self.meshes = []
 
+        sc = 20.0
         for ind, node in enumerate(all_nodes):
+            # ground meshes, make a triangle fan around the center
+            xs, zs = get_poly_xy(node.polygon, num=1)
+            cx = node.cx * sc
+            cz = node.cy * sc
+            y0 = 0.05
+            vts = (
+                (xs[0] * sc, y0, zs[0] * sc), (cx, y0, cz), (xs[1] * sc, y0, zs[1] * sc),
+                (xs[1] * sc, y0, zs[1] * sc), (cx, y0, cz), (xs[2] * sc, y0, zs[2] * sc),
+                (xs[2] * sc, y0, zs[2] * sc), (cx, y0, cz), (xs[3] * sc, y0, zs[3] * sc),
+                (xs[3] * sc, y0, zs[3] * sc), (cx, y0, cz), (xs[4] * sc, y0, zs[4] * sc),
+                (xs[4] * sc, y0, zs[4] * sc), (cx, y0, cz), (xs[0] * sc, y0, zs[0] * sc),
+            )
+            uvs = (
+                (1, 0), (0, 0), (0, 1),
+                (0, 1), (0, 0), (1, 0),
+                (1, 0), (0, 0), (0, 1),
+                (0, 1), (0, 0), (1, 0),
+                (1, 0), (0, 0), (0, 1),
+            )
+
+            normal = (0, 1, 0)
+            normals = (
+                normal, normal, normal,
+                normal, normal, normal,
+                normal, normal, normal,
+                normal, normal, normal,
+                normal, normal, normal,
+            )
+
+            hue = 97
+            sat = 0.1
+            var = 0.1
+            mesh = Entity(
+                position=(0, 0, 0),
+                model=Mesh(
+                    vertices=vts,
+                    uvs=uvs,
+                    normals=normals,
+                    colors=[
+                        hsv(hue, sat, var), hsv(hue, 0.01, 0.01), hsv(hue, sat, var),
+                        hsv(hue, sat, var), hsv(hue, 0.01, 0.01), hsv(hue, sat, var),
+                        hsv(hue, sat, var), hsv(hue, 0.01, 0.01), hsv(hue, sat, var),
+                        hsv(hue, sat, var), hsv(hue, 0.01, 0.01), hsv(hue, sat, var),
+                        hsv(hue, sat, var), hsv(hue, 0.01, 0.01), hsv(hue, sat, var),
+                    ],
+                    mode='triangle'),
+                # TODO(lucasw) need to shift each wall a little so there isn't a z-buffer
+                # fight with the wall for the adjacent node
+                # double_sided=True,
+            )
+            self.meshes.append(mesh)
             if ind % 2 == 0:
                 continue
             xs, zs = get_poly_xy(node.polygon, num=3)
             num = len(xs)
-            sc = 20.0
             for i0 in range(num):
                 i1 = (i0 + 1) % num
                 x0 = xs[i0] * sc
