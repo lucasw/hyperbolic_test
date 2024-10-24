@@ -25,6 +25,7 @@ from ursina import (
     destroy,
     distance_xz,
     held_keys,
+    hsv,
     invoke,
     mouse,
     random,
@@ -36,17 +37,24 @@ from ursina.shaders import lit_with_shadows_shader
 from poincare_plane import get_poly_xy, Node
 
 
-def make_verts(p0, p1):
+def make_verts(p0, p1, flip_normal=True):
     x0, y0, z0 = p0[0], p0[1], p0[2]
     x1, y1, z1 = p1[0], p1[1], p1[2]
     # make two triangles worth
-    vts = ((x1, y1, z1),
-           (x0, y1, z0),
-           (x1, y0, z1),
-           (x1, y0, z1),
-           (x0, y1, z0),
-           (x0, y0, z0),
-           )
+    if flip_normal:
+        vts = ((x1, y1, z1), (x1, y0, z1), (x0, y1, z0),
+               (x1, y0, z1), (x0, y0, z0), (x0, y1, z0),
+               )
+        uvs = ((1, 1), (0, 0), (0, 1),
+               (1, 0), (0, 0), (0, 1),
+               )
+    else:
+        vts = ((x1, y1, z1), (x0, y1, z0), (x1, y0, z1),
+               (x1, y0, z1), (x0, y1, z0), (x0, y0, z0),
+               )
+        uvs = ((1, 1), (0, 1), (0, 0),
+               (1, 0), (0, 1), (0, 0),
+               )
 
     pt1 = np.array([x0, y1, z0])
     pt2 = np.array([x1, y0, z1])
@@ -55,15 +63,17 @@ def make_verts(p0, p1):
     v1 = pt2 - p0
     v1 = v1 / np.sqrt(np.sum(v1**2))
     normal = np.cross(v0, v1)
+    if flip_normal:
+        normal *= -1.0
     # to tuple
     normal = (normal[0], normal[1], normal[2])
     normals = (normal, normal, normal,
                normal, normal, normal)
 
-    return vts, normals
+    return vts, normals, uvs
 
 
-def make_mesh(pos, p0, p1):
+def make_mesh(pos, p0, p1, hue):
     """
     x01, y01, z01 are relative to xyz
     x is left right
@@ -72,19 +82,19 @@ def make_mesh(pos, p0, p1):
     """
     position = (pos[0], pos[1], pos[2])
 
-    vertices, normals = make_verts(p0, p1)
+    vertices, normals, uvs = make_verts(p0, p1)
     mesh = Entity(position=position,
                   model=Mesh(
                       vertices=vertices,
-                      uvs=((1, 1), (0, 1), (0, 0),
-                           (1, 0), (0, 1), (0, 0),
-                           ),
+                      uvs=uvs,
                       normals=normals,
-                      colors=[color.red, color.yellow,
-                              color.green, color.cyan,
-                              color.blue, color.magenta,
+                      colors=[hsv(hue, 0.5, 0.5), hsv(hue, 0.5, 0.5), hsv(hue * 0.8, 0.5, 0.5),
+                              hsv(hue * 0.8, 0.5, 0.5), hsv(hue, 0.5, 0.5), hsv(hue * 0.8, 0.5, 0.5),
                               ],
                       mode='triangle'),
+                  # TODO(lucasw) need to shift each wall a little so there isn't a z-buffer
+                  # fight with the wall for the adjacent node
+                  # double_sided=True
                   )
     return mesh
 
@@ -130,7 +140,9 @@ class Game(Entity):
 
         self.meshes = []
 
-        for node in all_nodes:
+        for ind, node in enumerate(all_nodes):
+            if ind % 2 == 0:
+                continue
             xs, zs = get_poly_xy(node.polygon, num=3)
             num = len(xs)
             sc = 20.0
@@ -140,15 +152,15 @@ class Game(Entity):
                 z0 = zs[i0] * sc
                 x1 = xs[i1] * sc
                 z1 = zs[i1] * sc
-                y0 = 0.0
-                y1 = 1.0
+                y0 = -0.1
+                y1 = 2.0
 
                 p0a = np.array([x0, y0, z0])
                 p1a = np.array([x1, y1, z1])
 
                 p0b = np.array([0, 0, 0])
                 p1b = p1a - p0a
-                mesh = make_mesh(p0a, p0b, p1b)
+                mesh = make_mesh(p0a, p0b, p1b, hue=(node.depth * 20) % 360)
                 self.meshes.append(mesh)
 
     def update(self):
