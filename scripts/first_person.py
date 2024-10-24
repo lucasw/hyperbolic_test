@@ -112,31 +112,44 @@ class Game(Entity):
 
         self.editor_camera = EditorCamera(enabled=False, ignore_paused=True)
 
-        self.player = FirstPersonController(model='cube', z=-10, color=color.orange,
+        self.pos = Vec3(0.0, 0.0, 0.0)
+
+        self.player = FirstPersonController(model='cube', z=0.0, color=color.orange,
                                             origin_y=-.5, speed=8, collider='box')
-        self.player.collider = BoxCollider(self.player, Vec3(0, 1, 0), Vec3(0, 2, 0))
+        self.player.collider = BoxCollider(self.player, Vec3(0, 1, 0), Vec3(1, 2, 1))
 
         self.count = 0
         # Text(parent=self.surface, text='quad_with_usv_and_normals_and_vertex_colors',
         #      y=1, scale=10, origin=(0,-.5))
 
-        root_rot = Transform.rotation(deg=90)
-        root_offset = Transform.translation(Point(0.0, 0.0))
+        self.make_meshes()
+
+    def make_meshes(self):
+        root_rot = Transform.rotation(deg=0)
+        sc = 20.0
+        root_offset = Transform.translation(Point(-self.pos.x / sc, -self.pos.z / sc))
         root_transform = Transform.merge(root_offset, root_rot)
         self.root_node = Node(name="root", offset_transform=root_transform)
 
+        all_nodes = []
+        all_nodes.append(self.root_node)
+
         children = []
         children.extend(self.root_node.add_children("a"))
+        all_nodes.extend(children)
 
         grand_children = []
         for i, child in enumerate(children):
             prefix = f"b{i}"
             grand_children.extend(child.add_children(prefix))
-
-        all_nodes = []
-        all_nodes.append(self.root_node)
-        all_nodes.extend(children)
         all_nodes.extend(grand_children)
+
+        if False:
+            great_grand_children = []
+            for i, child in enumerate(grand_children):
+                prefix = f"c{i}"
+                great_grand_children.extend(child.add_children(prefix))
+            all_nodes.extend(great_grand_children)
 
         self.meshes = []
 
@@ -222,10 +235,23 @@ class Game(Entity):
         #     destroy(self.mesh)
         #     self.mesh = None
 
-        # print(type(self.surface.model.vertices))
+        # print
+        delta_pos = self.player.position
+        orig_y = delta_pos.y
+        threshold = 0.2
+        if abs(delta_pos.x) > threshold or abs(delta_pos.z) > threshold:
+            self.pos += self.player.position
+            self.pos.y = 0.0
+            print(self.pos)
+            self.player.position = Vec3(0.0, orig_y, 0.0)
+
+            for mesh in self.meshes:
+                destroy(mesh)
+            self.meshes = []
+            self.make_meshes()
+
         if held_keys['left mouse']:
             self.shoot()
-
         self.count += 1
 
     def shoot(self):
