@@ -31,8 +31,8 @@ def main():
 
     all_nodes = []
 
-    root = Node(name="root")
-    all_nodes = make_node_tree(root, levels=5)
+    root = Node(name="root", p_scale=3.0 / 5.0)
+    all_nodes = make_node_tree(root, levels=4)
 
     num = 50
     for i in range(1, num):
@@ -43,7 +43,7 @@ def main():
         root_offset = Transform.translation(Point(x, y))
         root_transform = Transform.merge(root_offset, root_rot)
 
-        root.set_transform(offset_transform=root_transform)
+        root.apply_transform(offset_transform=root_transform)
 
         strips = []
         poincare_strips = []

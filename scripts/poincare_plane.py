@@ -36,11 +36,14 @@ def hyp_poly_edge_construct(p, q):
     return r
 
 
-def construct_poly_vertices(p, q, deg_offset=0, skip=1):
+# skip >= 1
+# increasing p_scale approximates a circle
+def construct_poly_vertices(p, q, deg_offset=0, skip=1, p_scale=1):
     r = hyp_poly_edge_construct(p, q)
+    p2 = p * p_scale
     return [
-        Point.from_polar_euclid(r, deg=-skip * i * 360 / p + deg_offset)
-        for i in range(p)
+        Point.from_polar_euclid(r, deg=-skip * i * 360 / p2 + deg_offset)
+        for i in range(int(p2))
     ]
 
 
@@ -99,10 +102,11 @@ class Node:
 
     parent and parent_side must be provided together
     """
-    def __init__(self, name, depth=0, parent=None, parent_side=None, p=5, q=4):
+    def __init__(self, name, depth=0, parent=None, parent_side=None, p=5, q=4, p_scale=1):
         self.name = name
         self.depth = depth
         self.p = p
+        self.p_scale = p_scale
 
         self.neighbors = {}
         for i in range(p):
@@ -116,10 +120,19 @@ class Node:
         vertices = construct_poly_vertices(p, q)
         self.vertices = vertices
 
+        if p_scale == 1:
+            self.vertices_to_render = None
+        else:
+            # look at making other shapes but still with the 5,4 tiling
+            # increasing p makes
+            vertices_to_render = construct_poly_vertices(p, q, p_scale=self.p_scale)
+            self.vertices_to_render = vertices_to_render
+
         self.children = {}
 
-    def set_transform(self, offset_transform=None):
+    def apply_transform(self, offset_transform=None):
         transform = Transform.identity()
+
         if self.parent is not None:
             # use the first edge as the shift origin
             t0 = self.vertices[0]
@@ -136,7 +149,14 @@ class Node:
         transformed_vertices = transform.apply_to_list(self.vertices)
         self.polygon = Polygon.from_vertices(transformed_vertices)
 
-        self.xs, self.ys = get_poly_xy(self.polygon)
+        if self.vertices_to_render is not None:
+            vertices_to_render = self.vertices_to_render
+        else:
+            vertices_to_render = self.vertices
+        transformed_vertices = transform.apply_to_list(vertices_to_render)
+        self.polygon_to_render = Polygon.from_vertices(transformed_vertices)
+
+        self.xs, self.ys = get_poly_xy(self.polygon_to_render)
         minx = np.min(self.xs)
         miny = np.min(self.ys)
         maxx = np.max(self.xs)
@@ -171,7 +191,7 @@ class Node:
             self.yh = np.multiply(a, yp)
 
         for child in self.children.values():
-            child.set_transform()
+            child.apply_transform()
 
     def neighbor_names(self):
         text = "["
@@ -265,7 +285,7 @@ class Node:
                     right3.neighbors[(ind_from_right3 + 1) % self.p] = self
                     continue
 
-            node = Node(name=f"{prefix}{i}", depth=self.depth + 1, parent=self, parent_side=i)
+            node = Node(name=f"{prefix}{i}", depth=self.depth + 1, parent=self, parent_side=i, p_scale=self.p_scale)
             self.children[i] = node
             self.neighbors[i] = node
         return self.children.values()
