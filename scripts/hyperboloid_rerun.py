@@ -9,7 +9,7 @@ import numpy as np
 import rerun as rr
 
 from hyperbolic.poincare import Point, Transform
-from poincare_plane import make_node_tree, Node
+from poincare_plane import hyp_poly_edge_construct, make_node_tree, Node
 
 
 def xyz_to_poincare(x, y, z):
@@ -31,17 +31,28 @@ def main():
 
     all_nodes = []
 
-    root = Node(name="root", p_scale=3.0 / 5.0)
+    p = 5
+    q = 4
+    r = hyp_poly_edge_construct(p, q)
+    # set p_scale to 4 or so to get a circle
+    root = Node(name="root", p=p, q=q, p_scale=1)  # 3.0 / 5.0)
     all_nodes = make_node_tree(root, levels=4)
 
+    # the range of translation is -r to the closest part of the edge of a p-polygon
+    # theta = pi  / p
+    x_min = -r
+    x_max = r * np.cos(np.pi / p)
+    print(f"translation range: {x_min} - {x_max}")
     num = 50
     for i in range(1, num):
         fr = i / num
-        x = -0.75 + fr * 0.75 * 2.0
+        x = -r + fr * (x_max - x_min)
         y = 0.0
         root_rot = Transform.rotation(deg=90)
         root_offset = Transform.translation(Point(x, y))
         root_transform = Transform.merge(root_offset, root_rot)
+
+        rr.log("transform", rr.TextDocument(f"{x:0.2f} {y:0.2f} -> {root_transform}"))
 
         root.apply_transform(offset_transform=root_transform)
 
