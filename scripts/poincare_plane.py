@@ -16,6 +16,8 @@ from hyperbolic.euclid import Arc, Line
 from hyperbolic.poincare import Point, Polygon, Transform
 
 
+# TODO(lucasw) I think this is the radius of the tesselating p polygon with q
+# polygons at each corner intersection on a poincare circle?
 def hyp_poly_edge_construct(p, q):
     pi, pi2 = math.pi, math.pi * 2
     th = pi2 / q
@@ -48,7 +50,7 @@ def construct_poly_from_points(pt_list):
     return Polygon(e_list, join=True)
 
 
-def get_poly_xy(poly, num=8):
+def get_poly_xy(poly, num=5):
     xs = []
     ys = []
     for edge in poly.edges:
@@ -94,8 +96,10 @@ def get_poly_xy(poly, num=8):
 class Node:
     """construct a tree of polygon nodes
     avoid creating the same polygon in the same position when adding children
+
+    parent and parent_side must be provided together
     """
-    def __init__(self, name, depth=0, offset_transform=None, parent=None, parent_side=None, p=5, q=4):
+    def __init__(self, name, depth=0, parent=None, parent_side=None, p=5, q=4):
         self.name = name
         self.depth = depth
         self.p = p
@@ -104,28 +108,32 @@ class Node:
         for i in range(p):
             self.neighbors[i] = None
 
+        self.parent_side = parent_side
         self.parent = parent
         self.neighbors[0] = parent
 
         # TODO(lucasw) this is the same for every polygon
         vertices = construct_poly_vertices(p, q)
+        self.vertices = vertices
 
+        self.children = {}
+
+    def set_transform(self, offset_transform=None):
         transform = Transform.identity()
         if self.parent is not None:
-
             # use the first edge as the shift origin
-            t0 = vertices[0]
-            t1 = vertices[1]
+            t0 = self.vertices[0]
+            t1 = self.vertices[1]
             transform = Transform.shift_origin(t0, t1)
 
-            t0 = parent.polygon.vertices[(parent_side + 1) % p]
-            t1 = parent.polygon.vertices[parent_side]
+            t0 = self.parent.polygon.vertices[(self.parent_side + 1) % self.p]
+            t1 = self.parent.polygon.vertices[self.parent_side]
             trans_to_side = Transform.translation(t0, t1)
             transform = Transform.merge(transform, trans_to_side)
         if offset_transform is not None:
             transform = Transform.merge(transform, offset_transform)
 
-        transformed_vertices = transform.apply_to_list(vertices)
+        transformed_vertices = transform.apply_to_list(self.vertices)
         self.polygon = Polygon.from_vertices(transformed_vertices)
 
         self.xs, self.ys = get_poly_xy(self.polygon)
@@ -136,7 +144,34 @@ class Node:
         self.cx = minx + 0.5 * (maxx - minx)
         self.cy = miny + 0.5 * (maxy - miny)
 
-        self.children = {}
+        # hyperboloid coordinates
+        if True:
+            xp = self.xs
+            yp = self.ys
+
+            # instead of the unit circle poincare disk, convert back into
+            # hyperboloid coordinates
+            # zh^2 - xh^2 - yh^2 = 1.0
+            # zh^2 = 1.0 + xh^2 + yh^2
+            # zh = sqrt(1.0 + xh^2 + yh^2)
+
+            # convert to hyperboloid coords, solve for scalar a which projects
+            # the poincare point back onto the hyperboloid
+            # (xh, yh, zh) = (0, 0, -1) + a * (xp, yp, 1.0)
+            # xh = a * xp
+            # yh = a * yp
+            # zh = a - 1.0
+            # (a - 1.0)^2 = 1.0 + (a * xp)^2 + (a * yp)^2
+            # a = 2.0 / (1 - xp^2 - yp^2)
+            xp2 = np.multiply(xp, xp)
+            yp2 = np.multiply(yp, yp)
+            a = np.divide(2.0, 1.0 - xp2 - yp2)
+            self.zh = a - 1.0
+            self.xh = np.multiply(a, xp)
+            self.yh = np.multiply(a, yp)
+
+        for child in self.children.values():
+            child.set_transform()
 
     def neighbor_names(self):
         text = "["
@@ -245,6 +280,20 @@ class Node:
         ax.text(self.cx, self.cy, self.name, fontsize=6)
         for child in self.children.values():
             child.plot_recursive(ax)
+
+
+def make_node_tree(root: Node, levels=2) -> list[Node]:
+    parents = [root]
+    all_nodes = [root]
+    for level in range(levels):
+        children = []
+        for i, parent in enumerate(parents):
+            children.extend(parent.add_children(f"{level}_{i}_"))
+            all_nodes.extend(children)
+        print(f"cur depth: {children[0].depth}")
+        print(f"level: {level}, all: {len(all_nodes)}, children: {len(children)}")
+        parents = children
+    return all_nodes
 
 
 def example():
