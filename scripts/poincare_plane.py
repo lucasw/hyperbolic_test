@@ -8,6 +8,7 @@ https://github.com/cduck/hyperbolic/blob/master/examples/poincare.ipynb
 
 """
 
+import copy
 import math
 
 import numpy as np
@@ -107,6 +108,8 @@ class Node:
         self.depth = depth
         self.p = p
         self.p_scale = p_scale
+        self.r = hyp_poly_edge_construct(p, q)
+        self.half_angle = np.pi / p
 
         self.neighbors = {}
         for i in range(p):
@@ -152,7 +155,21 @@ class Node:
         if self.vertices_to_render is not None:
             vertices_to_render = self.vertices_to_render
         else:
-            vertices_to_render = self.vertices
+            vertices_to_render = copy.deepcopy(self.vertices)
+
+        # visualize some extra points
+        vertices_to_render.append(Point(0, 0))
+        if False:
+            # make an edge mid-point
+            # TODO(lucasw) this isn't right
+            # x = self.r * np.cos(self.half_angle)
+            # y = x * np.sin(self.half_angle)
+            p0 = vertices_to_render[0]
+            p1 = vertices_to_render[-2]
+            x = (p0.x + p1.x) / 2.0
+            y = (p0.y + p1.y) / 2.0
+            vertices_to_render.append(Point(x, y))
+
         transformed_vertices = transform.apply_to_list(vertices_to_render)
         self.polygon_to_render = Polygon.from_vertices(transformed_vertices)
 

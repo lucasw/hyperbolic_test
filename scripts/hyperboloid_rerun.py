@@ -9,7 +9,7 @@ import numpy as np
 import rerun as rr
 
 from hyperbolic.poincare import Point, Transform
-from poincare_plane import hyp_poly_edge_construct, make_node_tree, Node
+from poincare_plane import make_node_tree, Node
 
 
 def xyz_to_poincare(x, y, z):
@@ -22,71 +22,47 @@ def xyz_to_poincare(x, y, z):
     return px, py, pz
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Simple example of a ROS node that republishes to Rerun.")
-    rr.script_add_args(parser)
-    args, unknown_args = parser.parse_known_args()
+def make_translated(root, all_nodes, x, y):
+    root_rot = Transform.rotation(deg=0)
+    root_offset = Transform.translation(Point(x, y))
+    root_transform = Transform.merge(root_offset, root_rot)
 
-    rr.script_setup(args, "hyperboloid")  # , recording_id=recording_id)
+    rr.log("transform", rr.TextDocument(f"{x:0.2f} {y:0.2f} -> {root_transform}"))
 
-    all_nodes = []
+    root.apply_transform(offset_transform=root_transform)
 
-    p = 5
-    q = 4
-    r = hyp_poly_edge_construct(p, q)
-    # set p_scale to 4 or so to get a circle
-    root = Node(name="root", p=p, q=q, p_scale=1)  # 3.0 / 5.0)
-    all_nodes = make_node_tree(root, levels=4)
+    strips = []
+    poincare_strips = []
+    colors = []
+    h_colors = []
 
-    # the range of translation is -r to the closest part of the edge of a p-polygon
-    # theta = pi  / p
-    x_min = -r
-    x_max = r * np.cos(np.pi / p)
-    print(f"translation range: {x_min} - {x_max}")
-    num = 50
-    for i in range(1, num):
-        fr = i / num
-        x = -r + fr * (x_max - x_min)
-        y = 0.0
-        root_rot = Transform.rotation(deg=90)
-        root_offset = Transform.translation(Point(x, y))
-        root_transform = Transform.merge(root_offset, root_rot)
+    for node in all_nodes:
+        rgb = colorsys.hsv_to_rgb((node.depth * 0.17) % 1.0, 0.35, 0.35)
+        color = [int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)]
+        h_colors.append(color)
 
-        rr.log("transform", rr.TextDocument(f"{x:0.2f} {y:0.2f} -> {root_transform}"))
+        hyperboloid_strip = []
+        for x, y, z in zip(node.xh, node.yh, node.zh):
+            hyperboloid_strip.append([x, y, z])
+        strips.append(hyperboloid_strip)
 
-        root.apply_transform(offset_transform=root_transform)
+        rgb = colorsys.hsv_to_rgb((node.depth * 0.17) % 1.0, 0.5, 0.5)
+        color = [int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)]
+        colors.append(color)
 
-        strips = []
-        poincare_strips = []
-        colors = []
-        h_colors = []
+        poincare_strip = []
+        for x, y in zip(node.xs, node.ys):
+            z = 0.0
+            poincare_strip.append(xyz_to_poincare(x, y, z))
+        poincare_strips.append(poincare_strip)
 
-        for node in all_nodes:
-            rgb = colorsys.hsv_to_rgb((node.depth * 0.17) % 1.0, 0.35, 0.35)
-            color = [int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)]
-            h_colors.append(color)
+    rr_hyperboloid_strips = rr.LineStrips3D(strips, colors=h_colors)
+    rr.log("hyperboloid", rr_hyperboloid_strips)
+    rr_poincare_strips = rr.LineStrips3D(poincare_strips, colors=colors)
+    rr.log("poincare", rr_poincare_strips)
 
-            hyperboloid_strip = []
-            for x, y, z in zip(node.xh, node.yh, node.zh):
-                hyperboloid_strip.append([x, y, z])
-            strips.append(hyperboloid_strip)
 
-            rgb = colorsys.hsv_to_rgb((node.depth * 0.17) % 1.0, 0.5, 0.5)
-            color = [int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)]
-            colors.append(color)
-
-            poincare_strip = []
-            for x, y in zip(node.xs, node.ys):
-                z = 0.0
-                poincare_strip.append(xyz_to_poincare(x, y, z))
-            poincare_strips.append(poincare_strip)
-
-        rr_hyperboloid_strips = rr.LineStrips3D(strips, colors=h_colors)
-        rr.log("hyperboloid", rr_hyperboloid_strips)
-        rr_poincare_strips = rr.LineStrips3D(poincare_strips, colors=colors)
-        rr.log("poincare", rr_poincare_strips)
-
-    if False:
+"""
         extent = 10.0
         for ind, x in enumerate(np.arange(-extent, extent, extent / 20.0)):
             rgb = colorsys.hsv_to_rgb((ind * 0.01) % 1.0, 0.5, 0.5)
@@ -115,6 +91,45 @@ def main():
             strips.append(strip)
             poincare_strips.append(poincare_strip)
             colors.append(color)
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Simple example of a ROS node that republishes to Rerun.")
+    rr.script_add_args(parser)
+    args, unknown_args = parser.parse_known_args()
+
+    rr.script_setup(args, "hyperboloid")  # , recording_id=recording_id)
+
+    all_nodes = []
+
+    p = 5
+    q = 4
+    # set p_scale to 4 or so to get a circle
+    root = Node(name="root", p=p, q=q, p_scale=1)  # 3.0 / 5.0)
+    all_nodes = make_node_tree(root, levels=4)
+
+    # the range of translation is 0 to the closest part of the edge of a p-polygon
+    # which varies with the angle (given the orientation of the polygon)
+    # theta = pi / p
+    x_min = -root.r
+    x_max = root.r * np.cos(root.half_angle)
+    print(f"translation range: {x_min} - {x_max}")
+    r_num = 20
+    angle_num = 6
+    for j in range(0, angle_num + 1):
+        angle = root.half_angle * j / angle_num
+        for i in range(0, r_num + 1):
+            # TODO(lucasw) this isn't right- check that it even works without the hyperbolic transform
+            # dist_to_edge = root.r / (np.cos(angle) + np.tan(angle) * np.sin(angle))
+            dist_to_edge = root.r
+            fr = dist_to_edge * i / r_num
+            if j % 2 == 1:
+                fr = dist_to_edge - fr
+            x = - fr * np.cos(angle)
+            y = - fr * np.sin(angle)
+            make_translated(root, all_nodes, x, y)
+            rr.log("angle", rr.TextDocument(f"angle: {angle:0.2f}, dist: {fr:0.2f}, dist to edge: {dist_to_edge:0.2f}"))
 
 
 if __name__ == "__main__":
